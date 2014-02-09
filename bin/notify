@@ -1,0 +1,16 @@
+#!/bin/sh
+SERIAL_PORT=/dev/ttyUSB0
+
+echo "p255,255,0" > $SERIAL_PORT
+
+"$@"
+return_code=$?
+if [ $return_code -eq 0 ]
+then
+    echo "s0,255,0" > $SERIAL_PORT
+else
+    echo "s255,0,0" > $SERIAL_PORT
+    exit $ret
+fi
+
+

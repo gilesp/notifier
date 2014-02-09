@@ -1,0 +1,4 @@
+#!/bin/sh
+SERIAL_PORT=/dev/ttyUSB0
+
+echo "s0,0,0" > /dev/ttyUSB0
