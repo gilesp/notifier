@@ -24,6 +24,60 @@ const int FLASH_PERIOD = 500;
 bool ledsOn = false;
 unsigned long previousMillis = 0;
 
+/* Expects a string of the form x,x,x  where x is a number from 0 to 255 */
+void parseColour(int colour[], String colourString) {
+  int commaPosition = -1;
+
+  if(colourString.length() >= 5){
+    for(int i = 0; i < 3; i++){
+      commaPosition = colourString.indexOf(',');
+      if(commaPosition > 0){
+        colour[i] = colourString.substring(0, commaPosition).toInt();
+        colourString = colourString.substring(commaPosition+1);
+      } else {
+        colour[i] = colourString.toInt();
+      }
+    }
+  }
+}
+
+int checkColour(int value) {
+  return constrain(value, 0, 255);
+}
+
+//common anode leds need the values set to the inverse of common cathode 
+//hence the 255-value
+void setColour(int r, int g, int b) {
+  analogWrite(redPin, checkColour(255-r));
+  analogWrite(greenPin, checkColour(255-g));
+  analogWrite(bluePin, checkColour(255-b));  
+}
+
+void stepPulse() {
+  float halfRed = colour[RED]/2;
+  float halfGreen = colour[GREEN]/2;
+  float halfBlue = colour[BLUE]/2;
+  float multiplier = cos(2*PI/PULSE_PERIOD*time);
+
+  setColour(halfRed + (halfRed*multiplier),
+            halfGreen + (halfGreen*multiplier),
+            halfBlue + (halfBlue*multiplier));
+}
+
+void stepFlash() {
+  if(time - previousMillis > FLASH_PERIOD) {
+    previousMillis = time;
+    if(!ledsOn) {
+      setColour(colour[RED], colour[GREEN], colour[BLUE]);
+      ledsOn = true;
+    } 
+    else {
+      setColour(0, 0, 0);
+      ledsOn = false;
+    }
+  }
+}
+
 void setup() {
   //initialise serial
   Serial.begin(9600);
@@ -88,59 +142,5 @@ void serialEvent() {
     if (inChar == '\n') {
       parseInput = true;
     } 
-  }
-}
-
-/* Expects a string of the form x,x,x  where x is a number from 0 to 255 */
-void parseColour(int colour[], String colourString) {
-  int commaPosition = -1;
-
-  if(colourString.length() >= 5){
-    for(int i = 0; i < 3; i++){
-      commaPosition = colourString.indexOf(',');
-      if(commaPosition > 0){
-        colour[i] = colourString.substring(0, commaPosition).toInt();
-        colourString = colourString.substring(commaPosition+1);
-      } else {
-        colour[i] = colourString.toInt();
-      }
-    }
-  }
-}
-
-//common anode leds need the values set to the inverse of common cathode 
-//hence the 255-value
-void setColour(int r, int g, int b) {
-  analogWrite(redPin, checkColour(255-r));
-  analogWrite(greenPin, checkColour(255-g));
-  analogWrite(bluePin, checkColour(255-b));  
-}
-
-int checkColour(int value) {
-  return constrain(value, 0, 255);
-}
-
-void stepPulse() {
-  float halfRed = colour[RED]/2;
-  float halfGreen = colour[GREEN]/2;
-  float halfBlue = colour[BLUE]/2;
-  float multiplier = cos(2*PI/PULSE_PERIOD*time);
-
-  setColour(halfRed + (halfRed*multiplier),
-            halfGreen + (halfGreen*multiplier),
-            halfBlue + (halfBlue*multiplier));
-}
-
-void stepFlash() {
-  if(time - previousMillis > FLASH_PERIOD) {
-    previousMillis = time;
-    if(!ledsOn) {
-      setColour(colour[RED], colour[GREEN], colour[BLUE]);
-      ledsOn = true;
-    } 
-    else {
-      setColour(0, 0, 0);
-      ledsOn = false;
-    }
   }
 }
