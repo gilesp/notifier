@@ -1,26 +1,28 @@
+/* Define which pins to use */
 const int redPin = 9;
 const int bluePin = 10;
 const int greenPin = 11;
 
 /* common variables */
+const int RED = 0;
+const int GREEN = 1;
+const int BLUE = 2;
 unsigned long time;
+int colour[3] = {0,0,0};
 
 /* Command parsing variables */
-int commaPosition;
 char command = 's';
 String inputString = "";
-boolean stringComplete = false;
-
-int redValue = 0, greenValue = 0, blueValue = 0;
+boolean parseInput = false;
 
 /* Pulse variables */
 const int PULSE_PERIOD = 2500; //pulse cycle in milliseconds
-float rMultiplier = 0, gMultiplier = 0, bMultiplier = 0;
+//float rMultiplier = 0, gMultiplier = 0, bMultiplier = 0;
 
 /* Flash variables */
+const int FLASH_PERIOD = 500;
 bool ledsOn = false;
 unsigned long previousMillis = 0;
-const int FLASH_PERIOD = 500;
 
 void setup() {
   //initialise serial
@@ -30,73 +32,39 @@ void setup() {
   pinMode(redPin, OUTPUT);
   pinMode(greenPin, OUTPUT);
   pinMode(bluePin, OUTPUT);  
-  setColour(0,0,0);
+  setColour(colour[RED],colour[GREEN],colour[BLUE]);
 }
 
 void loop() {
-  if(stringComplete) {
-    //parse values
-
+  if(parseInput) {
+    //get command
     command = inputString.charAt(0);
-    inputString = inputString.substring(1, inputString.length());
-
-    //extract rgb values
-    commaPosition = inputString.indexOf(',');
-    if(commaPosition != -1) {
-      redValue = inputString.substring(0, commaPosition).toInt();
-      inputString = inputString.substring(commaPosition+1, inputString.length());
-
-    } 
-    else {
-      redValue = 0;
-      greenValue = 0;
-      blueValue = 0;
-    }
-
-    commaPosition = inputString.indexOf(',');
-    if(commaPosition != -1) {
-      greenValue = inputString.substring(0, commaPosition).toInt();
-      inputString = inputString.substring(commaPosition+1, inputString.length());
-      blueValue = inputString.toInt();
-    } 
-    else {
-      redValue = 0;
-      greenValue = 0;
-      blueValue = 0;
-    }
-
-    //set colour
+    parseColour(colour, inputString.substring(1, inputString.length()));
+    
     if(command == 's') {
       Serial.print("static ");
-      setColour(redValue, greenValue, blueValue);
-    } 
-    else if (command == 'p') {
+      setColour(colour[RED], colour[GREEN], colour[BLUE]);
+    } else if (command == 'p') {
       Serial.print("pulse ");
-      initPulse(redValue, greenValue, blueValue);
-    } 
-    else if (command == 'f') {
+    } else if (command == 'f') {
       Serial.print("flash ");
-      //initFlash(redValue, greenValue, blueValue);
-    } 
-    else {
+    } else {
       Serial.print("unknown ");
     }
 
     // print the three numbers in one string as hexadecimal:
-    Serial.print(redValue, HEX);
-    Serial.print(greenValue, HEX);
-    Serial.println(blueValue, HEX);
+    Serial.print(colour[RED], HEX);
+    Serial.print(colour[GREEN], HEX);
+    Serial.println(colour[BLUE], HEX);
 
     //clear input
     inputString = "";
-    stringComplete = false;
+    parseInput = false;
   }
 
-  if(command == 'p'){
-    //pulse
+  if(command == 'p'){    
     stepPulse();
-  } 
-  else if (command == 'f') {
+  } else if (command == 'f') {
     stepFlash(); 
   }
 
@@ -118,8 +86,25 @@ void serialEvent() {
     // if the incoming character is a newline, set a flag
     // so the main loop can do something about it:
     if (inChar == '\n') {
-      stringComplete = true;
+      parseInput = true;
     } 
+  }
+}
+
+/* Expects a string of the form x,x,x  where x is a number from 0 to 255 */
+void parseColour(int colour[], String colourString) {
+  int commaPosition = -1;
+
+  if(colourString.length() >= 5){
+    for(int i = 0; i < 3; i++){
+      commaPosition = colourString.indexOf(',');
+      if(commaPosition > 0){
+        colour[i] = colourString.substring(0, commaPosition).toInt();
+        colourString = colourString.substring(commaPosition+1);
+      } else {
+        colour[i] = colourString.toInt();
+      }
+    }
   }
 }
 
@@ -131,17 +116,26 @@ void setColour(int r, int g, int b) {
   analogWrite(bluePin, checkColour(255-b));  
 }
 
+int checkColour(int value) {
+  return constrain(value, 0, 255);
+}
+
 void stepPulse() {
-  setColour(rMultiplier+rMultiplier*cos(2*PI/PULSE_PERIOD*time),
-  gMultiplier+gMultiplier*cos(2*PI/PULSE_PERIOD*time),
-  bMultiplier+bMultiplier*cos(2*PI/PULSE_PERIOD*time));
+  float halfRed = colour[RED]/2;
+  float halfGreen = colour[GREEN]/2;
+  float halfBlue = colour[BLUE]/2;
+  float multiplier = cos(2*PI/PULSE_PERIOD*time);
+
+  setColour(halfRed + (halfRed*multiplier),
+            halfGreen + (halfGreen*multiplier),
+            halfBlue + (halfBlue*multiplier));
 }
 
 void stepFlash() {
   if(time - previousMillis > FLASH_PERIOD) {
     previousMillis = time;
     if(!ledsOn) {
-      setColour(redValue, greenValue, blueValue);
+      setColour(colour[RED], colour[GREEN], colour[BLUE]);
       ledsOn = true;
     } 
     else {
@@ -150,20 +144,3 @@ void stepFlash() {
     }
   }
 }
-
-void initPulse(int r, int g, int b) {
-  rMultiplier = r/2;
-  gMultiplier = g/2;
-  bMultiplier = b/2;
-}
-
-int checkColour(int value) {
-  if(value < 0){
-    value = 0;
-  } 
-  else if (value > 255) {
-    value = 255;
-  }
-  return value;  
-}
-
