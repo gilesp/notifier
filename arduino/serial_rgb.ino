@@ -8,12 +8,13 @@ const int RED = 0;
 const int GREEN = 1;
 const int BLUE = 2;
 unsigned long time;
+char command = 's';
 int colour[3] = {0,0,0};
 
 /* Command parsing variables */
-char command = 's';
-String inputString = "";
-boolean parseInput = false;
+int parseState = 0;
+int inputCommand = '\0';
+int inputColour[3] = {0,0,0};
 
 /* Pulse variables */
 const int PULSE_PERIOD = 2500; //pulse cycle in milliseconds
@@ -24,33 +25,12 @@ const int FLASH_PERIOD = 500;
 bool ledsOn = false;
 unsigned long previousMillis = 0;
 
-/* Expects a string of the form x,x,x  where x is a number from 0 to 255 */
-void parseColour(int colour[], String colourString) {
-  int commaPosition = -1;
-
-  if(colourString.length() >= 5){
-    for(int i = 0; i < 3; i++){
-      commaPosition = colourString.indexOf(',');
-      if(commaPosition > 0){
-        colour[i] = colourString.substring(0, commaPosition).toInt();
-        colourString = colourString.substring(commaPosition+1);
-      } else {
-        colour[i] = colourString.toInt();
-      }
-    }
-  }
-}
-
-int checkColour(int value) {
-  return constrain(value, 0, 255);
-}
-
 //common anode leds need the values set to the inverse of common cathode 
 //hence the 255-value
 void setColour(int r, int g, int b) {
-  analogWrite(redPin, checkColour(255-r));
-  analogWrite(greenPin, checkColour(255-g));
-  analogWrite(bluePin, checkColour(255-b));  
+  analogWrite(redPin, 255-r);
+  analogWrite(greenPin, 255-g);
+  analogWrite(bluePin, 255-b);
 }
 
 void stepPulse() {
@@ -81,44 +61,18 @@ void stepFlash() {
 void setup() {
   //initialise serial
   Serial.begin(9600);
-  // reserve 200 bytes for the input string
-  inputString.reserve(200);
   pinMode(redPin, OUTPUT);
   pinMode(greenPin, OUTPUT);
   pinMode(bluePin, OUTPUT);  
-  setColour(colour[RED],colour[GREEN],colour[BLUE]);
 }
 
 void loop() {
-  if(parseInput) {
-    //get command
-    command = inputString.charAt(0);
-    parseColour(colour, inputString.substring(1, inputString.length()));
-    
-    if(command == 's') {
-      Serial.print("static ");
+  if(command == 's') {
       setColour(colour[RED], colour[GREEN], colour[BLUE]);
-    } else if (command == 'p') {
-      Serial.print("pulse ");
-    } else if (command == 'f') {
-      Serial.print("flash ");
-    } else {
-      Serial.print("unknown ");
-    }
-
-    // print the three numbers in one string as hexadecimal:
-    Serial.print(colour[RED], HEX);
-    Serial.print(colour[GREEN], HEX);
-    Serial.println(colour[BLUE], HEX);
-
-    //clear input
-    inputString = "";
-    parseInput = false;
-  }
-
-  if(command == 'p'){    
+      command = '\0';
+  } else if(command == 'p') {
     stepPulse();
-  } else if (command == 'f') {
+  } else if(command == 'f') {
     stepFlash(); 
   }
 
@@ -133,14 +87,99 @@ void loop() {
  */
 void serialEvent() {
   while (Serial.available()) {
-    // get the new byte:
-    char inChar = (char)Serial.read(); 
-    // add it to the inputString:
-    inputString += inChar;
-    // if the incoming character is a newline, set a flag
-    // so the main loop can do something about it:
-    if (inChar == '\n') {
-      parseInput = true;
-    } 
+    char inChar = (char)Serial.read();
+    parseChar(inChar);
   }
+}
+
+/* Input parsing states:
+ *  -1: invalid input seen (discard rest of line)
+ *   0: looking for command
+ *   1: looking for start of RED
+ *   2: parsing RED, looking for comma
+ *   3: looking for start of GREEN
+ *   4: parsing GREEN, looking for comma
+ *   5: looking for start of BLUE
+ *   6: parsing BLUE, looking for newline
+ *   7: valid input seen
+ * Valid input matches (with numeric values less than 256):
+ *   ^[spf][0-9]+,[0-9]+,[0-9]+$
+ */
+
+void parseChar(char inChar) {
+    parseState = nextState(parseState, inChar);
+    int colidx = parseState == 2 ? RED : parseState == 4 ? GREEN : parseState == 6 ? BLUE : -1;
+    switch (parseState) {
+      case 0:
+        Serial.println("invalid");
+      case 1:
+        inputCommand = inChar;
+        inputColour[RED] = 0;
+        inputColour[GREEN] = 0;
+        inputColour[BLUE] = 0;
+        break;
+      case 2: case 4: case 6:
+        inputColour[colidx] = inputColour[colidx] * 10 + (inChar - '0');
+        if(inputColour[colidx] > 255) {
+            parseState = -1;
+        }
+        break;
+      case 7:
+        command = inputCommand;
+        colour[RED] = inputColour[RED];
+        colour[GREEN] = inputColour[GREEN];
+        colour[BLUE] = inputColour[BLUE];
+        parseState = 0;
+        showCommand();
+        break;
+    }
+}
+
+int nextState(int state, char input) {
+  switch (state) {
+    case -1:
+      if(input == '\r' || input == '\n') {
+        return 0;
+      }
+      break;
+    case 0:
+      if(input == '\r' || input == '\n') {
+        return 0;
+      }
+      if(input == 's' || input == 'p' || input == 'f') {
+        return 1;
+      }
+      return -1;
+    case 1: case 3: case 5:
+      if(isDigit(input)) {
+        return state + 1;
+      }
+      return -1;
+    case 2: case 4: case 6:
+      if(isDigit(input)) {
+        return state;
+      }
+      if(state != 6) {
+        if(input == ',') {
+          return state + 1;
+        }
+      } else {
+        if(input == '\r' || input == '\n') {
+          return 7;
+        }
+      }
+      return -1;
+    default:
+      return -1;
+  }
+}
+
+void showCommand() {
+  Serial.print(command == 's' ? "static(" : command == 'p' ? "pulse(" : "flash(");
+  Serial.print(colour[RED]);
+  Serial.print(",");
+  Serial.print(colour[GREEN]);
+  Serial.print(",");
+  Serial.print(colour[BLUE]);
+  Serial.println(")");
 }
